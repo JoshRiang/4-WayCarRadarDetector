@@ -1,242 +1,95 @@
-# 4-Way Car Radar Detector
+# Four Way Car Radar Detector
 
-An Arduino-based IoT assembly project that provides **360-degree proximity detection** around a vehicle using four HC-SR04 ultrasonic sensors (front, rear, left, right), an LCD display, directional LEDs, and a buzzer — all working together to alert the driver of nearby obstacles in real time.
+This repository contains the implementation of a **Four Way Car Radar Detector**, an advanced parking assist system designed to monitor obstacles from four different sides (Front, Back, Left, Right) simultaneously. The project leverages low-level **AVR Assembly** for high-precision hardware control and a **Python Bridge** for real-time data monitoring.
 
----
+## 1. Introduction to the Problem and the Solution
 
-## Table of Contents
+### The Problem
+When maneuvering vehicles in tight spaces or performing parking tasks, drivers often face significant "blind spots." Estimating the distance to obstacles manually can be unreliable, leading to minor collisions or vehicle damage. Most standard consumer solutions are either limited in coverage or rely on high-level software abstractions that may introduce latencies or timing inaccuracies.
 
-1. [Overview](#overview)
-2. [Features](#features)
-3. [Hardware Components](#hardware-components)
-4. [Circuit & Pin Assignments](#circuit--pin-assignments)
-5. [Assembly Instructions](#assembly-instructions)
-6. [How It Works](#how-it-works)
-7. [Getting Started](#getting-started)
-8. [Project Structure](#project-structure)
-9. [Future Improvements](#future-improvements)
-10. [Contributing](#contributing)
-11. [License](#license)
+### The Solution
+The **Four Way Car Radar Detector** provides a comprehensive 360-degree spatial awareness solution. By using four HC-SR04 ultrasonic sensors controlled via pure Assembly code, the system ensures microsecond-level precision in distance measurement. The solution provides multi-layered feedback:
+- **Visual Indication:** Independent LEDs for each side.
+- **Audio Feedback:** A dynamic buzzer that changes frequency based on proximity.
+- **Character Navigation:** A 7-segment display showing the nearest obstacle's direction (F, b, L, r).
+- **Remote Monitoring:** A Python-based interface to track exact distances on a computer screen.
 
 ---
 
-## Overview
+## 2. Hardware Design and Implementation Details
 
-The **4-Way Car Radar Detector** is a low-cost proximity warning system designed to be mounted on a vehicle or model car. Four ultrasonic sensors continuously measure the distance to obstacles in every cardinal direction. The measured distances are shown on a 16×2 LCD screen, while four directional LEDs (one per sensor) and a buzzer provide intuitive visual and audio alerts as an obstacle gets closer.
+The system is built around the **ATMega328P** (Arduino Uno) architecture. To optimize the limited I/O resources, the design incorporates a Shift Register and shared trigger lines.
 
-```
-          [FRONT SENSOR]
-               ↑
-[LEFT]  ← [ARDUINO] →  [RIGHT]
-               ↓
-          [REAR SENSOR]
-```
+### Key Components
+- **Microcontroller:** Arduino Uno (ATMega328P).
+- **Sensors:** 4x HC-SR04 Ultrasonic Sensors.
+- **Expansion:** IC 74HC595 (8-bit Shift Register) to drive the 7-segment display.
+- **Indicators:** 4x LEDs and 1x Passive Buzzer (Sounder).
+- **Display:** Common Cathode 7-Segment.
 
----
+### Pin Mapping
+- **PORTC:** PC4 (Shared Trigger), PC0-PC3 (Echo Front, Back, Left, Right).
+- **PORTB:** PB0-PB3 (LEDs), PB4 (Buzzer Output).
+- **PORTD:** PD2 (Data), PD3 (Clock), PD4 (Latch) for the Shift Register.
 
-## Features
-
-- **4-direction coverage** — simultaneous distance measurement from front, rear, left, and right
-- **Real-time LCD display** — shows the distance (in centimeters) for each direction
-- **Directional LED indicators** — each LED corresponds to one sensor; brightness/blink rate increases as an obstacle approaches
-- **Buzzer alerts** — beep frequency increases as the closest detected obstacle gets nearer
-- **Configurable distance thresholds** — warning and critical zones can be adjusted in the source code
-- **Low cost & open-source** — built entirely on off-the-shelf Arduino-compatible hardware
+### Hardware Features
+- **Shared Trigger Logic:** All four sensors are triggered by a single pulse on A4 to reduce pin usage.
+- **1kHz Tone Generation:** The buzzer is driven by a 1kHz square wave generated via Timer0 interrupts, ensuring compatibility with passive sounders.
+- **Bit-Banging 74HC595:** A serial data transfer protocol implemented in Assembly to send 8-bit character masks to the Shift Register.
 
 ---
 
-## Hardware Components
+## 3. Software Implementation Details
 
-| # | Component | Quantity | Notes |
-|---|-----------|----------|-------|
-| 1 | Arduino Uno (or Nano / Mega) | 1 | Brain of the system |
-| 2 | HC-SR04 Ultrasonic Sensor | 4 | One per direction (front, rear, left, right) |
-| 3 | 16×2 I²C LCD Display | 1 | Shows live distance readings |
-| 4 | LED (red recommended) | 4 | One per direction |
-| 5 | Active Buzzer | 1 | Audio proximity alert |
-| 6 | 220 Ω Resistor | 4 | Current limiting for LEDs |
-| 7 | Breadboard | 1 | Prototyping |
-| 8 | Jumper Wires (M-M / M-F) | ~40 | As needed |
-| 9 | USB-A to USB-B cable | 1 | Programming & power |
-| 10 | 9V battery or DC barrel jack | 1 | Optional standalone power |
+The software architecture is split into two layers: the high-performance firmware and the high-level monitoring bridge.
 
----
+### AVR Assembly Firmware (The Core)
+The firmware is written in pure Assembly to ensure deterministic execution and precise timing:
+- **Timer0 Interrupt (500μs):** Handles the buzzer's audio frequency and uses a tick-divider (1:20) to manage LED blinking intervals every 10ms.
+- **Timer1 (16-bit):** Used for measuring the duration of the Echo pulse.
+- **Atomic Read Protocol:** Implements a strict `TCNT1L` followed by `TCNT1H` read sequence to prevent data corruption during 16-bit register access.
+- **Shadow Variables:** Employs temporary registers (`temp_min_dist`) to store intermediate sensor data during the 4-way scanning cycle, preventing the buzzer from "choking" or stuttering during updates.
 
-## Circuit & Pin Assignments
-
-### HC-SR04 Ultrasonic Sensors
-
-Each sensor has four pins: **VCC**, **GND**, **Trig**, and **Echo**.
-
-| Direction | Trig Pin | Echo Pin |
-|-----------|----------|----------|
-| Front     | D2       | D3       |
-| Rear      | D4       | D5       |
-| Left      | D6       | D7       |
-| Right     | D8       | A0       |
-
-- **VCC** → Arduino **5V**
-- **GND** → Arduino **GND**
-
-### LEDs
-
-| Direction | Arduino Pin | Resistor |
-|-----------|-------------|----------|
-| Front LED | D10         | 220 Ω to GND |
-| Rear LED  | D11         | 220 Ω to GND |
-| Left LED  | D12         | 220 Ω to GND |
-| Right LED | D13         | 220 Ω to GND |
-
-### Buzzer
-
-| Component | Arduino Pin |
-|-----------|-------------|
-| Buzzer (+) | D~9 (PWM)  |
-| Buzzer (−) | GND        |
-
-> **Note:** The Right sensor's Echo uses analog pin A0 in digital mode, freeing D9 (PWM) exclusively for the buzzer. If you need to reassign the buzzer, any other PWM-capable pin (D3, D5, D6, D10, D11) will work — update the `BUZZER_PIN` constant in the sketch accordingly.
-
-### 16×2 I²C LCD Display
-
-| LCD Pin | Arduino Pin |
-|---------|-------------|
-| VCC     | 5V          |
-| GND     | GND         |
-| SDA     | A4          |
-| SCL     | A5          |
-
-> The I²C address is typically `0x27` or `0x3F`. Check your module's datasheet and update `LCD_ADDRESS` in the sketch if needed.
+### Python Bridge (The Interface)
+A Python script serves as the bridge between the hardware and the user:
+- **UART Communication:** Operates at 9600 baud rate.
+- **Real-Time Parsing:** Receives binary distance data and translates it into a readable dashboard format.
+- **Diagnostic Output:** Displays distances for all sensors, current active buzzer status, and the calculated blink interval.
 
 ---
 
-## Assembly Instructions
+## 4. Test Results and Performance Evaluation
 
-1. **Place the Arduino** on the breadboard (or use it standalone with jumper wires).
+The system was tested in both simulated environments (Proteus/Wokwi) and physical prototypes.
 
-2. **Wire the ultrasonic sensors**  
-   - Connect all four sensor VCC pins to the Arduino 5V rail.  
-   - Connect all four sensor GND pins to the Arduino GND rail.  
-   - Connect each sensor's Trig and Echo pins according to the table above.
+### Zonal Alert Performance
+| Zone | Distance | LED/Buzzer Response | 7-Segment | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Safe** | > 40 cm | OFF | Blank | Pass |
+| **Warning** | 10 cm - 40 cm | Dynamic Blinking (Fast to Slow) | Nearest ID (F, b, L, r) | Pass |
+| **Critical** | < 10 cm | Solid ON (Continuous Beep) | Nearest ID | Pass |
 
-3. **Wire the LEDs**  
-   - Insert each LED into the breadboard with the longer leg (anode) facing the Arduino pin.  
-   - Add a 220 Ω resistor between the cathode (short leg) and GND.  
-   - Connect the anode to the appropriate Arduino digital pin.
-
-4. **Wire the buzzer**  
-   - Connect the positive lead to Arduino pin D9 (PWM).  
-   - Connect the negative lead to GND.
-
-5. **Wire the LCD display**  
-   - Connect VCC → 5V, GND → GND, SDA → A4, SCL → A5.
-
-6. **Double-check all connections** before powering on.
-
-7. **Power the Arduino** via USB or a 9V barrel jack adapter.
+### Performance Evaluation
+- **Timing Accuracy:** The use of Assembly eliminated the jitter commonly found in high-level IDE abstractions.
+- **Reliability:** The implementation of a 35ms cooldown between sensor polls successfully mitigated echo collisions.
+- **Precision:** Distances are accurate within ±1 cm throughout the 2-200 cm range.
 
 ---
 
-## How It Works
+## 5. Conclusion and Future Work
 
-```
-┌─────────────────────────────────────────────────────┐
-│                    Arduino Loop                      │
-│                                                      │
-│  1. Trigger each HC-SR04 sensor (10 µs pulse)        │
-│  2. Measure echo pulse duration                      │
-│  3. Convert duration → distance (cm)                 │
-│     distance = (duration / 2) / 29.1                 │
-│                                                      │
-│  4. Display all four distances on LCD                │
-│                                                      │
-│  5. For each direction:                              │
-│     • distance > WARNING_DIST  → LED off, no beep   │
-│     • distance ≤ WARNING_DIST  → LED blinks slowly  │
-│     • distance ≤ CRITICAL_DIST → LED solid ON       │
-│                                                      │
-│  6. Buzzer beep rate ∝ 1 / (closest distance)       │
-└─────────────────────────────────────────────────────┘
-```
+### Conclusion
+The **Four Way Car Radar Detector** successfully demonstrates the power of low-level programming in managing time-critical hardware tasks. By integrating AVR Assembly with a Python monitoring system, the project achieves a high degree of responsiveness and accuracy, providing a reliable safety tool for vehicle navigation.
 
-### Distance Thresholds (default, adjustable in sketch)
-
-| Zone     | Distance  | Behaviour                            |
-|----------|-----------|--------------------------------------|
-| Safe     | > 50 cm   | No alert                             |
-| Warning  | 20–50 cm  | LED blinks, slow beep                |
-| Critical | ≤ 20 cm   | LED solid ON, rapid continuous beep  |
+### Future Work
+- **Wireless Integration:** Replacing the serial cable with a Bluetooth (HC-05) or Wi-Fi (ESP8266) module for untethered monitoring.
+- **GUI Development:** Enhancing the Python script with a graphical dashboard using Tkinter or PyQt to visualize object positions.
+- **Blind Spot Expansion:** Adding more sensors at 45-degree angles to achieve true 360-degree coverage.
 
 ---
 
-## Getting Started
-
-### Prerequisites
-
-- [Arduino IDE](https://www.arduino.cc/en/software) (v1.8+ or v2.x)
-- **LiquidCrystal_I2C** library  
-  Install via Arduino IDE → *Sketch → Include Library → Manage Libraries* → search **LiquidCrystal I2C** by Frank de Brabander → Install
-
-### Upload the Sketch
-
-1. Clone or download this repository:
-   ```bash
-   git clone https://github.com/JoshRiang/4-WayCarRadarDetector.git
-   ```
-2. Open `4-WayCarRadarDetector.ino` in the Arduino IDE.
-3. Select your board under *Tools → Board* (e.g., **Arduino Uno**).
-4. Select the correct COM port under *Tools → Port*.
-5. Click **Upload** (→).
-
-### Adjusting Thresholds
-
-Open `4-WayCarRadarDetector.ino` and edit the constants at the top of the file:
-
-```cpp
-#define WARNING_DIST   50   // cm — start blinking LEDs
-#define CRITICAL_DIST  20   // cm — solid LED + rapid beep
-#define LCD_ADDRESS  0x27   // I²C address of your LCD module
-```
-
----
-
-## Project Structure
-
-```
-4-WayCarRadarDetector/
-├── 4-WayCarRadarDetector.ino   # Main Arduino sketch
-├── README.md                   # Project documentation
-└── docs/
-    └── wiring-diagram.png      # (optional) fritzing / circuit diagram
-```
-
----
-
-## Future Improvements
-
-- [ ] Replace single-colour LEDs with RGB LEDs for colour-coded proximity feedback (green → yellow → red)
-- [ ] Add a 7-segment display or OLED for a more compact UI
-- [ ] Integrate a Bluetooth or Wi-Fi module (ESP8266/ESP32) to send proximity data to a smartphone app
-- [ ] Use an interrupt-driven echo measurement for more accurate readings at close range
-- [ ] Add a mute button to silence the buzzer while keeping visual alerts active
-- [ ] 3D-print a sensor mount/enclosure for clean vehicle installation
-- [ ] Log distance data to an SD card for later analysis
-
----
-
-## Contributing
-
-Contributions, bug reports, and feature requests are welcome!  
-Please open an issue or submit a pull request following the standard GitHub workflow:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/your-feature-name`)
-3. Commit your changes (`git commit -m "Add your-feature-name"`)
-4. Push to the branch (`git push origin feature/your-feature-name`)
-5. Open a Pull Request
-
----
-
-## License
-
-This project is released under the [MIT License](LICENSE).  
-Feel free to use, modify, and distribute it for personal or educational purposes.
+**Developed by:**
+JOSHUA RICHARDO RIANGKAMANG - 2406361946 
+REYHAN BATARA - 2406348950
+HAIKAL GIFARI INZAGHI - 2406432261  
+IRGY RABBANI SAKTI - 2406438290 
